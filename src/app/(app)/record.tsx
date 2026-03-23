@@ -1,204 +1,120 @@
-import { View, Text, StyleSheet, StatusBar } from 'react-native'
-import { useRouter } from 'expo-router'
-import { useEffect } from 'react'
-import Animated, { useAnimatedStyle } from 'react-native-reanimated'
-import { PressableScale } from 'pressto'
-import * as Haptics from 'expo-haptics'
+import { Dimensions, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import Animated, {
+    Extrapolation,
+    interpolate,
+    useAnimatedStyle,
+    useDerivedValue,
+} from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import Transition from 'react-native-screen-transitions'
+import { useScreenAnimation } from 'react-native-screen-transitions'
 
 import { colors, font, spacing } from '@/constants/theme'
-import { useRecorder } from '@/contexts/RecorderContext'
-import { useRecordingPreferences } from '@/hooks/useRecordingPreferences'
-import { WaveformViz } from '@/components/recordings/WaveformViz'
-import { MinimalViz } from '@/components/recordings/MinimalViz'
-import { formatTimer } from '@/utils/format-recording'
 
-// ─── RecordScreen ─────────────────────────────────────────────────────────────
+/** Must match `snapPoints` in `(app)/_layout.tsx` (small → full). */
+const SNAP_SMALL = 0.3
+const SNAP_FULL = 1
 
-export default function RecordScreen() {
-    const router = useRouter()
+const CARD_INSET = 16
+const CARD_RADIUS = 48
+
+const iosContinuousCorners =
+    Platform.OS === 'ios' ? ({ borderCurve: 'continuous' } as const) : null
+
+function useEffectiveWindowHeight(): number {
+    const { height } = useWindowDimensions()
+    return Math.max(1, height || Dimensions.get('window').height)
+}
+
+export default function RecordingScreen() {
     const insets = useSafeAreaInsets()
-    const { prefs } = useRecordingPreferences()
+    const windowHeight = useEffectiveWindowHeight()
+    const animation = useScreenAnimation()
 
-    const { isRecording, isSaving, elapsed, amplitudes, dotOpacity, start, stop, cancel } = useRecorder()
+    const snapProgress = useDerivedValue(() => {
+        const raw = animation.value.current.progress
+        const closing = animation.value.current.closing
+        const g = animation.value.current.gesture
+        const interactive = g.isDragging > 0.5 || g.isDismissing > 0.5
+        if (closing > 0.5 || interactive) return raw
+        return Math.max(raw, SNAP_SMALL)
+    })
 
-    const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }))
+    /**
+     * Outer shell height = full snap band `p × windowHeight` (never subtract margin from height).
+     * Bottom float is `paddingBottom` so the inner card always receives the remaining space; subtracting
+     * margin from height produced 0 when `p` was small or `marginBottom` clamped large.
+     */
+    const shellStyle = useAnimatedStyle(() => {
+        const p = snapProgress.value
+        const band = p * windowHeight
+        const inset = interpolate(p, [SNAP_SMALL, SNAP_FULL], [CARD_INSET, 0], Extrapolation.CLAMP)
+        const paddingBottom = interpolate(
+            p,
+            [SNAP_SMALL, SNAP_FULL],
+            [CARD_INSET + insets.bottom, 0],
+            Extrapolation.CLAMP,
+        )
+        return {
+            height: Math.max(0, band),
+            paddingHorizontal: inset,
+            paddingBottom,
+            paddingTop: 0,
+            backgroundColor: 'transparent',
+            alignSelf: 'stretch',
+        }
+    }, [windowHeight, insets.bottom])
 
-    // Auto-start recording when screen mounts
-    useEffect(() => {
-        start()
-    }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-    const handleStop = async () => {
-        await stop()
-        // Navigate to the review/detail screen for this recording
-        // The reviewData will be available via RecorderContext
-        router.replace('/(app)/review')
-    }
-
-    const handleCancel = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-        cancel()
-        router.back()
-    }
+    const cardStyle = useAnimatedStyle(() => {
+        const p = snapProgress.value
+        const r = interpolate(p, [SNAP_SMALL, SNAP_FULL], [CARD_RADIUS, 0], Extrapolation.CLAMP)
+        return {
+            flex: 1,
+            minHeight: 0,
+            backgroundColor: colors.bg.primary,
+            borderTopLeftRadius: r,
+            borderTopRightRadius: r,
+            borderBottomLeftRadius: r,
+            borderBottomRightRadius: r,
+            overflow: 'hidden',
+        }
+    })
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-            <StatusBar barStyle="light-content" animated />
-
-            {/* Top bar */}
-            <View style={styles.topBar}>
-                <PressableScale
-                    style={styles.cancelBtn}
-                    onPress={handleCancel}
-                    enabled={!isSaving}
-                    testID="record__cancel"
-                >
-                    <Text style={styles.cancelText}>Cancel</Text>
-                </PressableScale>
-
-                {isRecording && (
-                    <Animated.View style={[styles.indicator, dotStyle]}>
-                        <View style={styles.indicatorDot} />
-                        <Text style={styles.indicatorText}>Recording</Text>
-                    </Animated.View>
-                )}
-            </View>
-
-            {/* Shared element: title that morphs to detail screen */}
-            <Transition.View sharedBoundTag="recording-title" style={styles.titleWrap}>
-                <Text style={styles.title} testID="record__title">
-                    New Recording
-                </Text>
-            </Transition.View>
-
-            {/* Timer */}
-            <View style={styles.timerWrap}>
-                <Text style={styles.timer} testID="record__timer">
-                    {formatTimer(elapsed)}
-                </Text>
-            </View>
-
-            {/* Visualization */}
-            <View style={styles.vizWrap}>
-                {prefs.vizMode === 'waveform' ? (
-                    <WaveformViz amplitudes={amplitudes} testID="record__waveform" />
-                ) : (
-                    <MinimalViz isActive={isRecording} testID="record__minimal" />
-                )}
-            </View>
-
-            {/* Status */}
-            <Text style={styles.statusText}>
-                {isSaving ? 'Saving…' : isRecording ? 'Listening…' : 'Starting…'}
-            </Text>
-
-            {/* Stop button */}
-            <Transition.View sharedBoundTag="recording-action" style={styles.stopWrap}>
-                <PressableScale
-                    style={[styles.stopBtn, isSaving && styles.stopBtnDisabled]}
-                    onPress={handleStop}
-                    enabled={isRecording && !isSaving}
-                    testID="record__stop"
-                >
-                    <View style={styles.stopIcon} />
-                </PressableScale>
-            </Transition.View>
+        <View style={styles.sheetRoot}>
+            <Animated.View style={shellStyle}>
+                <Animated.View style={[cardStyle, iosContinuousCorners]}>
+                    <View
+                        style={[
+                            styles.inner,
+                            {
+                                paddingTop: Math.max(insets.top, spacing.lg),
+                                paddingBottom: spacing.lg,
+                                paddingHorizontal: spacing.lg,
+                            },
+                        ]}
+                    >
+                        <Text style={styles.label}>Recording</Text>
+                    </View>
+                </Animated.View>
+            </Animated.View>
         </View>
     )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-    container: {
+    sheetRoot: {
         flex: 1,
-        backgroundColor: colors.bg.recording,
-        paddingHorizontal: 20,
+        backgroundColor: 'transparent',
+        justifyContent: 'flex-end',
+        alignItems: 'stretch',
     },
-    topBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: spacing.md,
-        paddingBottom: spacing.lg,
+    inner: {
+        flex: 1,
+        minHeight: 0,
     },
-    cancelBtn: {
-        paddingVertical: spacing.sm,
-        paddingRight: spacing.sm,
-    },
-    cancelText: {
-        fontFamily: font.family.regular,
-        fontSize: font.size.md,
-        color: colors.text.secondary,
-    },
-    indicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-    },
-    indicatorDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: colors.accent.primary,
-    },
-    indicatorText: {
+    label: {
+        color: colors.text.primary,
         fontFamily: font.family.medium,
-        fontSize: font.size.sm,
-        color: colors.accent.primary,
-    },
-    titleWrap: {
-        paddingHorizontal: 0,
-        paddingBottom: spacing.sm,
-    },
-    title: {
-        fontFamily: font.family.bold,
-        fontSize: font.size.xl,
-        color: colors.white,
-    },
-    timerWrap: {
-        alignItems: 'center',
-        paddingVertical: spacing.xxl,
-    },
-    timer: {
-        fontFamily: font.family.black,
-        fontSize: 64,
-        color: colors.white,
-        letterSpacing: -2,
-    },
-    vizWrap: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    statusText: {
-        fontFamily: font.family.regular,
-        fontSize: font.size.md,
-        color: colors.text.secondary,
-        textAlign: 'center',
-        paddingBottom: spacing.xxl,
-    },
-    stopWrap: {
-        alignItems: 'center',
-        paddingBottom: spacing.xxxl,
-    },
-    stopBtn: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: colors.white,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    stopBtnDisabled: {
-        opacity: 0.5,
-    },
-    stopIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 6,
-        backgroundColor: colors.black,
+        fontSize: font.size.lg,
     },
 })

@@ -7,6 +7,7 @@ import {
     Platform,
     ActivityIndicator,
     Alert,
+    StatusBar,
 } from 'react-native'
 import { Link } from 'expo-router'
 import { useState } from 'react'
@@ -39,6 +40,7 @@ export default function LoginScreen() {
             style={styles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
+            <StatusBar barStyle="dark-content" />
             <View style={styles.inner}>
                 <View style={styles.header}>
                     <Text style={styles.wordmark} testID="login__wordmark">Command</Text>
@@ -124,7 +126,7 @@ const styles = StyleSheet.create({
     },
     input: {
         height: 52,
-        backgroundColor: colors.bg.card,
+        backgroundColor: colors.bg.muted,
         borderRadius: radius.lg,
         paddingHorizontal: spacing.lg,
         fontFamily: font.family.regular,

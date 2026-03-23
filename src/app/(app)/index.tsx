@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     },
     search: {
         height: 44,
-        backgroundColor: colors.bg.card,
+        backgroundColor: colors.bg.muted,
         borderRadius: radius.pill,
         paddingHorizontal: spacing.lg,
         fontFamily: font.family.regular,
