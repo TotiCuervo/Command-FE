@@ -51,7 +51,6 @@ export default function AppLayout() {
                                     // from `current.progress`; sheet height/position stays in `record.tsx`.
                                     screenStyleInterpolator: ({ current }) => {
                                         'worklet'
-
                                         const overlay = interpolateColor(
                                             current.progress,
                                             [0, 1],

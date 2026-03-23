@@ -15,7 +15,8 @@ const SNAP_SMALL = 0.3
 const SNAP_FULL = 1
 
 const CARD_INSET = 16
-const CARD_RADIUS = 48
+/** Rounded corners at the small snap; interpolates to 0 when expanded (softer than the previous 48). */
+const CARD_RADIUS = 24
 
 const iosContinuousCorners =
     Platform.OS === 'ios' ? ({ borderCurve: 'continuous' } as const) : null
@@ -33,34 +34,54 @@ export default function RecordingScreen() {
     const snapProgress = useDerivedValue(() => {
         const raw = animation.value.current.progress
         const closing = animation.value.current.closing
+        const entering = animation.value.current.entering
+        const animating = animation.value.current.animating
         const g = animation.value.current.gesture
         const interactive = g.isDragging > 0.5 || g.isDismissing > 0.5
         if (closing > 0.5 || interactive) return raw
+        // Opening / snap springs animate `progress` from 0 → first detent. A floor of SNAP_SMALL while idle
+        // skipped that motion and the sheet popped in at full small height.
+        if (entering > 0.5 || animating > 0.5) return raw
         return Math.max(raw, SNAP_SMALL)
     })
 
     /**
-     * Outer shell height = full snap band `p × windowHeight` (never subtract margin from height).
-     * Bottom float is `paddingBottom` so the inner card always receives the remaining space; subtracting
-     * margin from height produced 0 when `p` was small or `marginBottom` clamped large.
+     * p ∈ [0, SNAP_SMALL]: full minimized height + bottom float immediately; slide in/out with translateY
+     * (one motion — no “grow then settle”). p > SNAP_SMALL: band grows for expand-to-full.
      */
     const shellStyle = useAnimatedStyle(() => {
         const p = snapProgress.value
-        const band = p * windowHeight
+        const floatBottom = CARD_INSET + insets.bottom
         const inset = interpolate(p, [SNAP_SMALL, SNAP_FULL], [CARD_INSET, 0], Extrapolation.CLAMP)
-        const paddingBottom = interpolate(
-            p,
-            [SNAP_SMALL, SNAP_FULL],
-            [CARD_INSET + insets.bottom, 0],
-            Extrapolation.CLAMP,
-        )
+        const slideOffset = SNAP_SMALL * windowHeight + floatBottom
+
+        let height: number
+        let paddingBottom: number
+        let translateY: number
+
+        if (p <= SNAP_SMALL) {
+            height = SNAP_SMALL * windowHeight
+            paddingBottom = floatBottom
+            translateY = interpolate(p, [0, SNAP_SMALL], [slideOffset, 0], Extrapolation.CLAMP)
+        } else {
+            height = p * windowHeight
+            paddingBottom = interpolate(
+                p,
+                [SNAP_SMALL, SNAP_FULL],
+                [floatBottom, 0],
+                Extrapolation.CLAMP,
+            )
+            translateY = 0
+        }
+
         return {
-            height: Math.max(0, band),
+            height: Math.max(0, height),
             paddingHorizontal: inset,
             paddingBottom,
             paddingTop: 0,
             backgroundColor: 'transparent',
             alignSelf: 'stretch',
+            transform: [{ translateY }],
         }
     }, [windowHeight, insets.bottom])
 
@@ -88,7 +109,7 @@ export default function RecordingScreen() {
                             styles.inner,
                             {
                                 paddingTop: Math.max(insets.top, spacing.lg),
-                                paddingBottom: spacing.lg,
+                                paddingBottom: spacing.lg + insets.bottom,
                                 paddingHorizontal: spacing.lg,
                             },
                         ]}
