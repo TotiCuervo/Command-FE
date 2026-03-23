@@ -37,6 +37,20 @@ export default function AppLayout() {
                             {/* Home — default horizontal slide */}
                             <TransitionStack.Screen name="index" />
                             <TransitionStack.Screen
+                                name="recording/[id]"
+                                options={({ route }) => {
+                                    const raw = route.params && 'id' in route.params ? route.params.id : ''
+                                    const rid = Array.isArray(raw) ? raw[0] : String(raw ?? '')
+                                    return {
+                                        ...Transition.Presets.SharedAppleMusic({
+                                            sharedBoundTag: `recording-title-${rid}`,
+                                        }),
+                                        // Replace flows: avoid “pop” feel when swapping the sheet for detail.
+                                        animationTypeForReplace: 'push',
+                                    }
+                                }}
+                            />
+                            <TransitionStack.Screen
                                 name="record"
                                 options={{
                                     enableTransitions: true,
@@ -44,7 +58,9 @@ export default function AppLayout() {
                                     gestureDirection: 'vertical',
                                     snapPoints: [RECORD_SNAP_SMALL, RECORD_SNAP_FULL],
                                     initialSnapIndex: 0,
-                                    backdropBehavior: 'dismiss',
+                                    // Lets users scroll/interact with the list behind the peek sheet. Tradeoff: tapping
+                                    // the dimmed area no longer dismisses (use swipe-down on the sheet or a close control).
+                                    backdropBehavior: 'passthrough',
                                     // With `snapPoints`, `progress` is the snap fraction (e.g. 0.3 → 1), not 0→1 “enter”.
                                     // SlideFromBottom-style translateY([0,1,2],[h,0,-h]) would apply ~0.7h shift at the first
                                     // snap and breaks the sheet + makes the home screen look “pushed up”. Dim the backdrop

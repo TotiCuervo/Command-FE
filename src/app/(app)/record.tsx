@@ -1,4 +1,14 @@
-import { Dimensions, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native'
+import { useCallback, useRef } from 'react'
+import {
+    ActivityIndicator,
+    Dimensions,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
+} from 'react-native'
 import Animated, {
     Extrapolation,
     interpolate,
@@ -6,16 +16,18 @@ import Animated, {
     useDerivedValue,
 } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useScreenAnimation } from 'react-native-screen-transitions'
+import { useRouter } from 'expo-router'
+import Transition, { useScreenAnimation } from 'react-native-screen-transitions'
 
 import { colors, font, spacing } from '@/constants/theme'
+import { formatTimer } from '@/utils/format-recording'
+import { useRecorder } from '@/contexts/RecorderContext'
 
-/** Must match `snapPoints` in `(app)/_layout.tsx` (small → full). */
+/** Must match `snapPoints` in `(app)/_layout.tsx`. */
 const SNAP_SMALL = 0.3
 const SNAP_FULL = 1
 
 const CARD_INSET = 16
-/** Rounded corners at the small snap; interpolates to 0 when expanded (softer than the previous 48). */
 const CARD_RADIUS = 24
 
 const iosContinuousCorners =
@@ -27,9 +39,20 @@ function useEffectiveWindowHeight(): number {
 }
 
 export default function RecordingScreen() {
+    const router = useRouter()
     const insets = useSafeAreaInsets()
     const windowHeight = useEffectiveWindowHeight()
     const animation = useScreenAnimation()
+    /** Keeps `sharedBoundTag` stable through `stop()` (context clears `sessionLocalId` before navigation finishes). */
+    const lastSessionIdForSharedBoundRef = useRef<string | null>(null)
+    const {
+        sessionLocalId,
+        isRecording,
+        isSaving,
+        elapsed,
+        dotOpacity,
+        stop,
+    } = useRecorder()
 
     const snapProgress = useDerivedValue(() => {
         const raw = animation.value.current.progress
@@ -39,16 +62,10 @@ export default function RecordingScreen() {
         const g = animation.value.current.gesture
         const interactive = g.isDragging > 0.5 || g.isDismissing > 0.5
         if (closing > 0.5 || interactive) return raw
-        // Opening / snap springs animate `progress` from 0 → first detent. A floor of SNAP_SMALL while idle
-        // skipped that motion and the sheet popped in at full small height.
         if (entering > 0.5 || animating > 0.5) return raw
         return Math.max(raw, SNAP_SMALL)
     })
 
-    /**
-     * p ∈ [0, SNAP_SMALL]: full minimized height + bottom float immediately; slide in/out with translateY
-     * (one motion — no “grow then settle”). p > SNAP_SMALL: band grows for expand-to-full.
-     */
     const shellStyle = useAnimatedStyle(() => {
         const p = snapProgress.value
         const floatBottom = CARD_INSET + insets.bottom
@@ -100,8 +117,32 @@ export default function RecordingScreen() {
         }
     })
 
+    const dotStyle = useAnimatedStyle(() => ({
+        opacity: dotOpacity.value,
+    }))
+
+    if (sessionLocalId != null) {
+        lastSessionIdForSharedBoundRef.current = sessionLocalId
+    }
+    const sharedTitleTag =
+        lastSessionIdForSharedBoundRef.current != null
+            ? (`recording-title-${lastSessionIdForSharedBoundRef.current}` as const)
+            : null
+
+    const handleStop = useCallback(async () => {
+        const id = await stop()
+        if (id) {
+            // Push (don't replace): replacing pops the sheet via `beforeRemove` → progress animates to 0
+            // (looks like the recorder closing). Pushing keeps the record screen underneath during SharedAppleMusic.
+            router.push({
+                pathname: '/(app)/recording/[id]',
+                params: { id, fromRecorder: '1' },
+            })
+        }
+    }, [router, stop])
+
     return (
-        <View style={styles.sheetRoot}>
+        <View style={styles.sheetRoot} pointerEvents="box-none">
             <Animated.View style={shellStyle}>
                 <Animated.View style={[cardStyle, iosContinuousCorners]}>
                     <View
@@ -114,7 +155,36 @@ export default function RecordingScreen() {
                             },
                         ]}
                     >
-                        <Text style={styles.label}>Recording</Text>
+                        {sharedTitleTag ? (
+                            <Transition.View sharedBoundTag={sharedTitleTag} style={styles.titleWrap}>
+                                <Text style={styles.title}>New recording</Text>
+                            </Transition.View>
+                        ) : (
+                            <Text style={styles.title}>New recording</Text>
+                        )}
+
+                        <View style={styles.center}>
+                            <Animated.View style={[styles.recDot, dotStyle]} />
+                        </View>
+
+                        <View style={styles.controls}>
+                            <View style={styles.ctrlBtn}>
+                                <Text style={styles.ctrlIcon}>‖</Text>
+                            </View>
+                            <Pressable
+                                style={[styles.ctrlBtn, styles.stopBtn]}
+                                onPress={handleStop}
+                                disabled={!isRecording || isSaving}
+                            >
+                                {isSaving ? (
+                                    <ActivityIndicator color={colors.white} />
+                                ) : (
+                                    <View style={styles.stopSquare} />
+                                )}
+                            </Pressable>
+                        </View>
+
+                        <Text style={styles.timer}>{formatTimer(elapsed)}</Text>
                     </View>
                 </Animated.View>
             </Animated.View>
@@ -124,18 +194,71 @@ export default function RecordingScreen() {
 
 const styles = StyleSheet.create({
     sheetRoot: {
-        flex: 1,
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: 'transparent',
-        justifyContent: 'flex-end',
         alignItems: 'stretch',
     },
     inner: {
         flex: 1,
         minHeight: 0,
     },
-    label: {
+    titleWrap: {
+        alignSelf: 'flex-start',
+    },
+    title: {
         color: colors.text.primary,
+        fontFamily: font.family.black,
+        fontSize: font.size.xl,
+        letterSpacing: -0.3,
+    },
+    center: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 120,
+    },
+    recDot: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        backgroundColor: colors.accent.primary,
+    },
+    controls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.xl,
+        paddingVertical: spacing.md,
+    },
+    ctrlBtn: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: colors.bg.muted,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    stopBtn: {
+        backgroundColor: colors.black,
+    },
+    ctrlIcon: {
+        fontSize: 22,
+        color: colors.text.primary,
+        fontFamily: font.family.bold,
+    },
+    stopSquare: {
+        width: 22,
+        height: 22,
+        borderRadius: 4,
+        backgroundColor: colors.white,
+    },
+    timer: {
+        textAlign: 'center',
         fontFamily: font.family.medium,
-        fontSize: font.size.lg,
+        fontSize: font.size.md,
+        color: colors.text.secondary,
     },
 })

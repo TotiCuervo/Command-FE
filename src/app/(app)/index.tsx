@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { colors, font, spacing, radius } from '@/constants/theme'
 import { useRecordings } from '@/contexts/RecordingsContext'
+import { useRecorder } from '@/contexts/RecorderContext'
 import { RecordingRow } from '@/components/recordings/RecordingRow'
 import { EmptyState } from '@/components/recordings/EmptyState'
 
@@ -18,6 +19,7 @@ export default function HomeScreen() {
     const [searchQuery, setSearchQuery] = useState('')
 
     const { recordings, isLoading, refetch } = useRecordings()
+    const recorder = useRecorder()
 
     const ctaScale = useSharedValue(1)
     const ctaStyle = useAnimatedStyle(() => ({ transform: [{ scale: ctaScale.value }] }))
@@ -28,12 +30,15 @@ export default function HomeScreen() {
           )
         : recordings
 
-    const handleRecord = () => {
+    const handleRecord = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
         ctaScale.value = withSpring(0.96, {}, () => {
             ctaScale.value = withSpring(1)
         })
-        router.push('/(app)/record')
+        const ok = await recorder.start()
+        if (ok) {
+            router.push('/(app)/record')
+        }
     }
 
     return (
