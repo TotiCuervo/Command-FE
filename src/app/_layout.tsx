@@ -3,6 +3,7 @@ import { useFonts } from 'expo-font'
 import * as SplashScreen from 'expo-splash-screen'
 import { useEffect } from 'react'
 import { StatusBar } from 'expo-status-bar'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
 import { AuthProvider } from '@/contexts/AuthContext'
 
@@ -26,9 +27,11 @@ export default function RootLayout() {
     if (!fontsLoaded) return null
 
     return (
-        <AuthProvider>
-            <StatusBar style="light" />
-            <Stack screenOptions={{ headerShown: false }} />
-        </AuthProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <AuthProvider>
+                <StatusBar style="light" />
+                <Stack screenOptions={{ headerShown: false }} />
+            </AuthProvider>
+        </GestureHandlerRootView>
     )
 }

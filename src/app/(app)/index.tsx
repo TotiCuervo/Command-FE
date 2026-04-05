@@ -6,10 +6,10 @@ import { PressableScale } from 'pressto'
 import * as Haptics from 'expo-haptics'
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Transition from "react-native-screen-transitions";
 
 import { colors, font, spacing, radius } from '@/constants/theme'
 import { useRecordings } from '@/contexts/RecordingsContext'
-import { useRecorder } from '@/contexts/RecorderContext'
 import { RecordingRow } from '@/components/recordings/RecordingRow'
 import { EmptyState } from '@/components/recordings/EmptyState'
 
@@ -19,7 +19,6 @@ export default function HomeScreen() {
     const [searchQuery, setSearchQuery] = useState('')
 
     const { recordings, isLoading, refetch } = useRecordings()
-    const recorder = useRecorder()
 
     const ctaScale = useSharedValue(1)
     const ctaStyle = useAnimatedStyle(() => ({ transform: [{ scale: ctaScale.value }] }))
@@ -30,25 +29,20 @@ export default function HomeScreen() {
           )
         : recordings
 
-    const handleRecord = async () => {
+    const handleRecord = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
         ctaScale.value = withSpring(0.96, {}, () => {
             ctaScale.value = withSpring(1)
         })
-        const ok = await recorder.start()
-        if (ok) {
-            router.push('/(app)/record')
-        }
+        router.push('/(app)/record')
     }
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]} testID="home__screen">
             <StatusBar barStyle="dark-content" />
-
-            <View style={styles.header}>
+            <Transition.View sharedBoundTag="header" style={styles.header}>
                 <Text style={styles.title}>Recordings</Text>
-            </View>
-
+            </Transition.View>
             <View style={styles.searchWrap}>
                 <TextInput
                     style={styles.search}
@@ -101,6 +95,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bg.primary,
     },
     header: {
+        zIndex: 1000,
         paddingHorizontal: 20,
         paddingTop: spacing.lg,
         paddingBottom: spacing.sm,
