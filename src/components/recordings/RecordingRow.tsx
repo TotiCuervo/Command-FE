@@ -1,9 +1,8 @@
 import { memo } from 'react'
-import { View, Text, StyleSheet } from 'react-native'
+import { View, Text, StyleSheet, Pressable } from 'react-native'
 import { useRouter } from 'expo-router'
 import Animated, { FadeInDown } from 'react-native-reanimated'
 import * as Haptics from 'expo-haptics'
-import Transition from 'react-native-screen-transitions'
 
 import { colors, font, spacing, radius } from '@/constants/theme'
 import { formatDate, formatDuration } from '@/utils/format-recording'
@@ -22,8 +21,7 @@ export const RecordingRow = memo(function RecordingRow({ item, index }: Recordin
 
     return (
         <Animated.View entering={FadeInDown.delay(index * 40).springify()}>
-            <Transition.Pressable
-                sharedBoundTag={`recording-title-${recordingId}`}
+            <Pressable
                 style={styles.row}
                 onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -43,7 +41,7 @@ export const RecordingRow = memo(function RecordingRow({ item, index }: Recordin
                         {formatDate(item.recordedAt)} · {formatDuration(item.duration)}
                     </Text>
                 </View>
-            </Transition.Pressable>
+            </Pressable>
 
             <View style={styles.separator} />
         </Animated.View>

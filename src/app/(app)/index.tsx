@@ -6,6 +6,7 @@ import { PressableScale } from 'pressto'
 import * as Haptics from 'expo-haptics'
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Transition from "react-native-screen-transitions";
 
 import { colors, font, spacing, radius } from '@/constants/theme'
 import { useRecordings } from '@/contexts/RecordingsContext'
@@ -39,11 +40,9 @@ export default function HomeScreen() {
     return (
         <View style={[styles.container, { paddingTop: insets.top }]} testID="home__screen">
             <StatusBar barStyle="dark-content" />
-
-            <View style={styles.header}>
+            <Transition.View sharedBoundTag="header" style={styles.header}>
                 <Text style={styles.title}>Recordings</Text>
-            </View>
-
+            </Transition.View>
             <View style={styles.searchWrap}>
                 <TextInput
                     style={styles.search}
@@ -96,6 +95,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bg.primary,
     },
     header: {
+        zIndex: 1000,
         paddingHorizontal: 20,
         paddingTop: spacing.lg,
         paddingBottom: spacing.sm,
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     },
     search: {
         height: 44,
-        backgroundColor: colors.bg.card,
+        backgroundColor: colors.bg.muted,
         borderRadius: radius.pill,
         paddingHorizontal: spacing.lg,
         fontFamily: font.family.regular,

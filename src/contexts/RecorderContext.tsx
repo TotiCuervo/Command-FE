@@ -50,8 +50,10 @@ interface RecorderContextValue {
     amplitudes: number[]
     dotOpacity: SharedValue<number>
     reviewData: ReviewData | null
-    start: () => Promise<void>
-    stop: () => Promise<void>
+    /** Set when recording starts; used for `sharedBoundTag` with `recording-title-${sessionLocalId}`. */
+    sessionLocalId: string | null
+    start: () => Promise<boolean>
+    stop: () => Promise<string | null>
     cancel: () => void
     reset: () => void
 }
@@ -72,6 +74,8 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
         Array.from({ length: BAR_COUNT }, () => Math.random() * 0.15 + 0.05)
     )
     const [reviewData, setReviewData] = useState<ReviewData | null>(null)
+    const [sessionLocalId, setSessionLocalId] = useState<string | null>(null)
+    const sessionLocalIdRef = useRef<string | null>(null)
 
     // Store amplitude snapshots for playback visualization in review
     const amplitudeHistoryRef = useRef<number[][]>([])
@@ -126,10 +130,14 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
 
     // ── Start ────────────────────────────────────────────────────────────────
 
-    const start = useCallback(async () => {
+    const start = useCallback(async (): Promise<boolean> => {
         try {
             const { granted } = await requestRecordingPermissionsAsync()
-            if (!granted) return
+            if (!granted) return false
+
+            const id = generateLocalId()
+            sessionLocalIdRef.current = id
+            setSessionLocalId(id)
 
             await setAudioModeAsync({
                 allowsRecording: true,
@@ -158,15 +166,19 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
             timerRef.current = setInterval(() => {
                 setElapsed(Date.now() - startTimeRef.current)
             }, 100)
+            return true
         } catch (err) {
             console.error('Failed to start recording', err)
+            sessionLocalIdRef.current = null
+            setSessionLocalId(null)
+            return false
         }
     }, [recorder, dotOpacity])
 
     // ── Stop + save to SQLite ────────────────────────────────────────────────
 
-    const stop = useCallback(async () => {
-        if (!isRecording || isSaving) return
+    const stop = useCallback(async (): Promise<string | null> => {
+        if (!isRecording || isSaving) return null
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
 
@@ -176,6 +188,8 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
         setIsRecording(false)
         setIsSaving(true)
 
+        const localId = sessionLocalIdRef.current ?? generateLocalId()
+
         try {
             const r = recorderRef.current
             const before = r.getStatus()
@@ -184,7 +198,6 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
             if (!uri) throw new Error('Recording file not available')
 
             const durationSec = Math.max(1, Math.round(before.durationMillis / 1000))
-            const localId = generateLocalId()
 
             const transcript: string | null = null
 
@@ -204,17 +217,15 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
             queryClient.invalidateQueries({ queryKey: RECORDINGS_KEY })
             processQueue()
 
-            // Transition to review phase
-            setReviewData({
-                localId,
-                title: null,
-                duration: durationSec,
-                amplitudeHistory: amplitudeHistoryRef.current,
-                recordedAt: recordedAtRef.current,
-            })
-            setPhase('review')
+            setPhase('idle')
+            sessionLocalIdRef.current = null
+            setSessionLocalId(null)
+            setReviewData(null)
+
+            return localId
         } catch (err) {
             console.error('Failed to save recording', err)
+            return null
         } finally {
             setIsSaving(false)
         }
@@ -228,6 +239,8 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
         setIsRecording(false)
         setPhase('idle')
         setReviewData(null)
+        sessionLocalIdRef.current = null
+        setSessionLocalId(null)
         void recorderRef.current.stop().catch(() => {})
     }, [dotOpacity])
 
@@ -237,6 +250,8 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
         setPhase('idle')
         setReviewData(null)
         setElapsed(0)
+        sessionLocalIdRef.current = null
+        setSessionLocalId(null)
         setAmplitudes(Array.from({ length: BAR_COUNT }, () => Math.random() * 0.15 + 0.05))
         amplitudeHistoryRef.current = []
     }, [])
@@ -250,12 +265,26 @@ export function RecorderProvider({ children }: { children: React.ReactNode }) {
             amplitudes,
             dotOpacity,
             reviewData,
+            sessionLocalId,
             start,
             stop,
             cancel,
             reset,
         }),
-        [phase, isRecording, isSaving, elapsed, amplitudes, dotOpacity, reviewData, start, stop, cancel, reset]
+        [
+            phase,
+            isRecording,
+            isSaving,
+            elapsed,
+            amplitudes,
+            dotOpacity,
+            reviewData,
+            sessionLocalId,
+            start,
+            stop,
+            cancel,
+            reset,
+        ]
     )
 
     return <RecorderContext.Provider value={value}>{children}</RecorderContext.Provider>

@@ -1,204 +1,130 @@
-import { View, Text, StyleSheet, StatusBar } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useEffect } from 'react'
-import Animated, { useAnimatedStyle } from 'react-native-reanimated'
-import { PressableScale } from 'pressto'
-import * as Haptics from 'expo-haptics'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Transition from 'react-native-screen-transitions'
 
-import { colors, font, spacing } from '@/constants/theme'
-import { useRecorder } from '@/contexts/RecorderContext'
-import { useRecordingPreferences } from '@/hooks/useRecordingPreferences'
-import { WaveformViz } from '@/components/recordings/WaveformViz'
-import { MinimalViz } from '@/components/recordings/MinimalViz'
-import { formatTimer } from '@/utils/format-recording'
+import { colors, font, radius, spacing } from '@/constants/theme'
+import { useRecordings } from '@/contexts/RecordingsContext'
+import type { Recording } from '@/types/recording.types'
 
-// ─── RecordScreen ─────────────────────────────────────────────────────────────
+function recordingRouteId(r: Recording): string {
+    return r.localId ?? String(r.id)
+}
 
+/** Stub screen — UI only, no recording. */
 export default function RecordScreen() {
     const router = useRouter()
     const insets = useSafeAreaInsets()
-    const { prefs } = useRecordingPreferences()
+    const { recordings } = useRecordings()
 
-    const { isRecording, isSaving, elapsed, amplitudes, dotOpacity, start, stop, cancel } = useRecorder()
+    const lastRecording = recordings[recordings.length - 1]
+    const lastId = lastRecording ? recordingRouteId(lastRecording) : null
 
-    const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }))
-
-    // Auto-start recording when screen mounts
-    useEffect(() => {
-        start()
-    }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-    const handleStop = async () => {
-        await stop()
-        // Navigate to the review/detail screen for this recording
-        // The reviewData will be available via RecorderContext
-        router.replace('/(app)/review')
-    }
-
-    const handleCancel = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-        cancel()
-        router.back()
+    const onOpenLast = () => {
+        if (lastId) router.replace(`/(app)/recording/${lastId}`)
     }
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-            <StatusBar barStyle="light-content" animated />
-
-            {/* Top bar */}
-            <View style={styles.topBar}>
-                <PressableScale
-                    style={styles.cancelBtn}
-                    onPress={handleCancel}
-                    enabled={!isSaving}
-                    testID="record__cancel"
+        <View style={[styles.screen, { paddingTop: Math.max(insets.top, spacing.lg) }]}>
+            <View style={[styles.topBar, { paddingHorizontal: spacing.lg }]}>
+                <Pressable
+                    onPress={() => router.back()}
+                    hitSlop={12}
+                    style={styles.backBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Go back"
                 >
-                    <Text style={styles.cancelText}>Cancel</Text>
-                </PressableScale>
-
-                {isRecording && (
-                    <Animated.View style={[styles.indicator, dotStyle]}>
-                        <View style={styles.indicatorDot} />
-                        <Text style={styles.indicatorText}>Recording</Text>
-                    </Animated.View>
-                )}
+                    <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Transition.View sharedBoundTag="header" style={styles.header}>
+                    <Text style={styles.headerTitle}>New Recording</Text>
+                </Transition.View>
             </View>
 
-            {/* Shared element: title that morphs to detail screen */}
-            <Transition.View sharedBoundTag="recording-title" style={styles.titleWrap}>
-                <Text style={styles.title} testID="record__title">
-                    New Recording
-                </Text>
-            </Transition.View>
-
-            {/* Timer */}
-            <View style={styles.timerWrap}>
-                <Text style={styles.timer} testID="record__timer">
-                    {formatTimer(elapsed)}
-                </Text>
-            </View>
-
-            {/* Visualization */}
-            <View style={styles.vizWrap}>
-                {prefs.vizMode === 'waveform' ? (
-                    <WaveformViz amplitudes={amplitudes} testID="record__waveform" />
-                ) : (
-                    <MinimalViz isActive={isRecording} testID="record__minimal" />
-                )}
-            </View>
-
-            {/* Status */}
-            <Text style={styles.statusText}>
-                {isSaving ? 'Saving…' : isRecording ? 'Listening…' : 'Starting…'}
-            </Text>
-
-            {/* Stop button */}
-            <Transition.View sharedBoundTag="recording-action" style={styles.stopWrap}>
-                <PressableScale
-                    style={[styles.stopBtn, isSaving && styles.stopBtnDisabled]}
-                    onPress={handleStop}
-                    enabled={isRecording && !isSaving}
-                    testID="record__stop"
+            <View style={[styles.body, { paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}>
+                <Pressable
+                    onPress={onOpenLast}
+                    disabled={!lastId}
+                    style={({ pressed }) => [
+                        styles.openLastBtn,
+                        !lastId && styles.openLastBtnDisabled,
+                        pressed && lastId && styles.openLastBtnPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open last recording in list"
+                    accessibilityState={{ disabled: !lastId }}
                 >
-                    <View style={styles.stopIcon} />
-                </PressableScale>
-            </Transition.View>
+                    <Text style={[styles.openLastLabel, !lastId && styles.openLastLabelDisabled]}>
+                        Open last recording
+                    </Text>
+                </Pressable>
+            </View>
         </View>
     )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-    container: {
+    screen: {
         flex: 1,
-        backgroundColor: colors.bg.recording,
-        paddingHorizontal: 20,
+        backgroundColor: colors.bg.primary,
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        gap: spacing.sm,
+        flex: 1,
+        justifyContent: 'center',
     },
     topBar: {
+        flex: 1,
+        // backgroundColor: 'red',
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: spacing.md,
-        paddingBottom: spacing.lg,
-    },
-    cancelBtn: {
-        paddingVertical: spacing.sm,
-        paddingRight: spacing.sm,
-    },
-    cancelText: {
-        fontFamily: font.family.regular,
-        fontSize: font.size.md,
-        color: colors.text.secondary,
-    },
-    indicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.xs,
-    },
-    indicatorDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: colors.accent.primary,
-    },
-    indicatorText: {
-        fontFamily: font.family.medium,
-        fontSize: font.size.sm,
-        color: colors.accent.primary,
-    },
-    titleWrap: {
-        paddingHorizontal: 0,
+        gap: spacing.sm,
         paddingBottom: spacing.sm,
     },
-    title: {
-        fontFamily: font.family.bold,
-        fontSize: font.size.xl,
-        color: colors.white,
+    backBtn: {
+        paddingVertical: 4,
+        paddingRight: spacing.sm,
     },
-    timerWrap: {
-        alignItems: 'center',
-        paddingVertical: spacing.xxl,
+    backChevron: {
+        fontSize: 32,
+        lineHeight: 34,
+        color: colors.text.primary,
+        fontFamily: font.family.medium,
     },
-    timer: {
+    headerTitle: {
         fontFamily: font.family.black,
-        fontSize: 64,
-        color: colors.white,
-        letterSpacing: -2,
+        fontSize: font.size.display,
+        color: colors.text.primary,
+        letterSpacing: -0.5,
     },
-    vizWrap: {
+    body: {
         flex: 1,
-        alignItems: 'center',
         justifyContent: 'center',
     },
-    statusText: {
-        fontFamily: font.family.regular,
-        fontSize: font.size.md,
-        color: colors.text.secondary,
-        textAlign: 'center',
-        paddingBottom: spacing.xxl,
-    },
-    stopWrap: {
-        alignItems: 'center',
-        paddingBottom: spacing.xxxl,
-    },
-    stopBtn: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: colors.white,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    stopBtnDisabled: {
-        opacity: 0.5,
-    },
-    stopIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 6,
+    openLastBtn: {
+        alignSelf: 'stretch',
+        height: 52,
+        borderRadius: radius.pill,
         backgroundColor: colors.black,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    openLastBtnPressed: {
+        opacity: 0.88,
+    },
+    openLastBtnDisabled: {
+        backgroundColor: colors.bg.muted,
+    },
+    openLastLabel: {
+        fontFamily: font.family.semiBold,
+        fontSize: font.size.md,
+        color: colors.white,
+    },
+    openLastLabelDisabled: {
+        color: colors.text.placeholder,
     },
 })
